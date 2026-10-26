@@ -1,0 +1,1312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Box Incinerator</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    background: #17191d;
+    color: #eee;
+    font-family: Arial, sans-serif;
+  }
+  .game { width: min(960px, 96vw); }
+  header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; }
+  h1 { margin: 0; font-size: clamp(20px, 3vw, 28px); }
+  .hint { color: #b9bec8; font-size: 14px; }
+  canvas {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    display: block;
+    background: #252a31;
+    border: 2px solid #3c424c;
+    border-radius: 10px;
+    touch-action: none;
+    cursor: grab;
+  }
+  canvas:active { cursor: grabbing; }
+  .tabs { display: flex; gap: 8px; margin: 12px 0 10px; }
+  .subtabs { display: flex; gap: 8px; margin: 0 0 10px; }
+  .subtabs button.active { background: #d97732; color: #17191d; }
+  #prestigeSubtab, #prestigeUpgradesSubtab { color: #69e27d; }
+  #reincarnationSubtab { color: #70baff; }
+  #reincarnationSubtab.active { background: #267cc4; color: #071b2b; }
+  #lifeBoxesCounter { color: #70baff; }
+  #lifeTreeTab { color: #70baff; }
+  #lifeTreeTab.active { background: #267cc4; color: #071b2b; }
+  #lifeTreeSubtabs button { color: #70baff; }
+  #lifeTreeSubtabs button.active, #lifeUpgradePanel .upgrade button { background: #267cc4; color: #071b2b; }
+  #lifeUpgradePanel .upgrade button:disabled { background: #515761; color: #aeb4bd; }
+  #lifeUpgradePanel .lifePlaceholder { color: #b9bec8; }
+  #prestigeSubtab.active, #prestigeUpgradesSubtab.active { background: #35b957; color: #102016; }
+  #prestigeUpgradesPanel .upgrade button { background: #35b957; color: #102016; }
+  #prestigeUpgradesPanel .upgrade button:disabled { background: #515761; color: #aeb4bd; }
+  #prestigedCounter { color: #69e27d; }
+  #prestigeInfo { background: transparent; border: 0; padding: 0 0 12px; margin: 0; color: #c7ccd4; line-height: 1.45; }
+  #prestigeGain { color: #69e27d; font-weight: bold; }
+  #powersTab.active { background: #515761; color: #eee; }
+  #mineSubtab.active { background: #515761; color: #eee; }
+  #mineField { position: relative; width: min(100%, 540px); aspect-ratio: 1 / 1; background: #c5c9ce; border: 2px solid #9ba1a8; border-radius: 7px; padding: 0; overflow: hidden; }
+  .mineBox { position: absolute; left: var(--mine-x); top: var(--mine-y); transform: translate(-50%, -50%); width: 58px; height: 58px; min-height: 0; padding: 3px; background: linear-gradient(45deg, transparent 46%, #777e87 47%, #777e87 52%, transparent 53%), linear-gradient(-45deg, transparent 46%, #777e87 47%, #777e87 52%, transparent 53%), #454b53; border: 4px solid #292e35; border-radius: 2px; color: #f0f2f5; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; line-height: 1.05; text-shadow: 0 1px rgba(0,0,0,.35); }
+  .mineBox:hover { background: linear-gradient(45deg, transparent 46%, #8a929c 47%, #8a929c 52%, transparent 53%), linear-gradient(-45deg, transparent 46%, #8a929c 47%, #8a929c 52%, transparent 53%), #555d67; }
+  .mineBox small { font-size: 10px; font-weight: bold; background: rgba(48,53,60,.95); color: #f0f2f5; padding: 1px 2px; }
+  .mineBox:disabled { opacity: .7; cursor: not-allowed; }
+  #coalBoxesDisplay, #mineCoalBoxesDisplay, #generatorFuelDisplay { color: #454a51; }
+  #boxPowerDisplay, #boxPowerMultiplier, #pbBoostValue { color: #ffd54a; }
+  .powerControls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; }
+  .powerControls input { width: 150px; padding: 9px; border-radius: 6px; border: 1px solid #515761; background: #17191d; color: #eee; }
+  .powerStat { margin: 8px 0; }
+  button {
+    border: 0; border-radius: 7px; padding: 9px 14px;
+    background: #3b414a; color: #eee; font-weight: bold; cursor: pointer;
+  }
+  button:hover { background: #505864; }
+  button.active { background: #d97732; color: #17191d; }
+  .panel { background: #22262c; border: 1px solid #3c424c; border-radius: 9px; padding: 14px; }
+  .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+  #status { color: #c7ccd4; font-size: 14px; }
+  #score { color: #f0c28e; }
+  .upgrade { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .upgrade p { margin: 5px 0 0; color: #b9bec8; font-size: 14px; }
+  .upgrade button { background: #d97732; color: #17191d; }
+  .upgrade button:disabled { background: #515761; color: #aeb4bd; cursor: not-allowed; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main class="game">
+  <header>
+    <h1>Box Incinerator</h1>
+    <div class="hint">Drag the box, then release to toss it.</div>
+  </header>
+  <div class="tabs">
+    <button id="gameTab" class="active" type="button">Game</button>
+    <button id="upgradesTab" type="button">Upgrades</button>
+    <button id="powersTab" type="button" hidden>Powers</button>
+    <button id="lifeTreeTab" type="button" hidden>Life Upgrade Tree</button>
+  </div>
+  <section id="gamePanel" class="panel">
+    <div id="gameSubtabs" class="subtabs" hidden>
+      <button id="mainSubtab" class="active" type="button">Main</button>
+      <button id="prestigeSubtab" type="button">Prestige</button>
+      <button id="reincarnationSubtab" type="button" hidden>Reincarnation</button>
+    </div>
+    <div id="prestigeInfo" hidden>
+      <div id="resetInfoText">Prestiging (prestiging the green box) resets incinerated boxes and IB upgrades for Prestiged boxes. First prestige will unlock prestige upgrades.</div>
+      <div id="prestigeGainLine">You will gain <span id="prestigeGain">1.0</span> Prestiged Boxes</div>
+      <div id="reincarnationGainLine" hidden>Reincarnating requires 2.5K Prestiged Boxes and grants 1 Life Box.</div>
+    </div>
+    <canvas id="game" width="960" height="540" aria-label="A physics game with a box, platform, and incinerator"></canvas>
+    <div class="controls">
+      <div><strong id="score">Incinerated boxes: 0</strong><br><strong id="prestigedCounter" hidden>Prestiged Boxes: 0</strong><br><strong id="lifeBoxesCounter" hidden>Life Boxes: 0</strong></div>
+      <span id="status">Get the box into the incinerator!</span>
+    </div>
+  </section>
+  <section id="upgradesPanel" class="panel" hidden>
+    <div id="upgradeSubtabs" class="subtabs">
+      <button id="ibUpgradesSubtab" class="active" type="button">IB Upgrades</button>
+      <button id="prestigeUpgradesSubtab" type="button" hidden>Prestige Upgrades</button>
+    </div>
+    <div id="ibUpgradesPanel">
+    <div class="upgrade">
+      <div>
+        <strong>Upgrade 1: Incinerator guard wall</strong>
+        <p>Adds a sturdy wall at the far end of the incinerator to stop the box from flying off that side.</p>
+        <p><strong>Cost: 10 IB</strong> · Your IB: <span id="upgradeBalance">0</span></p>
+      </div>
+      <button id="buyWall" type="button">Buy — 10 IB</button>
+    </div>
+    <div id="upgrade2Row" class="upgrade" style="margin-top: 18px; padding-top: 16px; border-top: 1px solid #3c424c;" hidden>
+      <div>
+        <strong>Upgrade 2: Reinforced guard wall</strong>
+        <p>Each level adds another 100% of the base wall height and increases IB earned per incinerated box by 1.</p>
+        <p>Level: <span id="upgrade2Level">0</span> · <strong>Cost: <span id="upgrade2Cost">5</span> IB</strong> · Your IB: <span id="upgrade2Balance">0</span></p>
+      </div>
+      <button id="buyUpgrade2" type="button" disabled>Buy — 5 IB</button>
+    </div>
+    <div id="upgrade3Row" class="upgrade" style="margin-top: 18px; padding-top: 16px; border-top: 1px solid #3c424c;" hidden>
+      <div>
+        <strong>Upgrade 3: Double trouble</strong>
+        <p>Makes boxes respawn twice as fast and adds a second independently draggable box.</p>
+        <p><strong>Cost: 50 IB</strong> · Your IB: <span id="upgrade3Balance">1000</span></p>
+      </div>
+      <button id="buyUpgrade3" type="button" disabled>Buy — 50 IB</button>
+    </div>
+    <div id="upgrade4Row" class="upgrade" style="margin-top: 18px; padding-top: 16px; border-top: 1px solid #3c424c;" hidden>
+      <div>
+        <strong>Upgrade 4: Box prestige</strong>
+        <p>Unlocks the Prestige subtab, a green box, and a blue prestiger. Incinerating the green box with at least 200 IB resets your IB and awards 1 Prestiged Box.</p>
+        <p><strong>Cost: 200 IB</strong> · Your IB: <span id="upgrade4Balance">1000</span></p>
+      </div>
+      <button id="buyUpgrade4" type="button" disabled>Buy — 200 IB</button>
+    </div>
+    </div>
+    <div id="prestigeUpgradesPanel" hidden>
+      <div class="upgrade">
+        <div>
+          <strong>PU1: Now do it all again!</strong>
+          <p>Doubles IB gain.</p>
+          <p><strong>Cost: 1 PB</strong> · Your PB: <span id="pu1Balance">2.0</span></p>
+        </div>
+        <button id="buyPU1" type="button" disabled>Buy — 1 PB</button>
+      </div>
+      <div id="pu2Row" class="upgrade" style="margin-top: 18px; padding-top: 16px; border-top: 1px solid #3c424c;" hidden>
+        <div>
+          <strong>PU2: Industrialization</strong>
+          <p>Unlocks the Powers tab, Box Power, and the Mine.</p>
+          <p><strong>Cost: 2 PB</strong> · Your PB: <span id="pu2Balance">2.0</span></p>
+        </div>
+        <button id="buyPU2" type="button" disabled>Buy — 2 PB</button>
+      </div>
+      <div id="pu3Row" class="upgrade" style="margin-top: 18px; padding-top: 16px; border-top: 1px solid #3c424c;" hidden>
+        <div>
+          <strong>PU3: Box Power is goated</strong>
+          <p>Each level adds 1 mining damage, doubles Box Power generation, and increases generator Coal Box capacity by 2.</p>
+          <p>Level: <span id="pu3Level">0</span> / 2 · <strong>Cost: <span id="pu3Cost">5</span> PB</strong> · Your PB: <span id="pu3Balance">2</span></p>
+        </div>
+        <button id="buyPU3" type="button" disabled>Buy — 5 PB</button>
+      </div>
+      <div id="pu4Row" class="upgrade" style="margin-top: 18px; padding-top: 16px; border-top: 1px solid #3c424c;" hidden>
+        <div>
+          <strong>PU4: SYNERGY</strong>
+          <p>Prestige Boxes boost IB and BP.</p>
+          <p>Currently: <span id="pu4IBMult">1</span>x IB, <span id="pu4BPMult">1</span>x BP</p>
+          <p><strong>Cost: 10 PB</strong> · Your PB: <span id="pu4Balance">2</span></p>
+        </div>
+        <button id="buyPU4" type="button" disabled>Buy — 10 PB</button>
+      </div>
+      <div id="pu5Row" class="upgrade" style="margin-top: 18px; padding-top: 16px; border-top: 1px solid #3c424c;" hidden>
+        <div>
+          <strong>PU5: More Industrialization</strong>
+          <p>Turns the normal Game tab platform into a conveyor that moves boxes toward the incinerator. Speed increases by 1 box side length per second per level.</p>
+          <p>Level: <span id="pu5Level">0</span> / 3 · <strong>Cost: <span id="pu5Cost">20</span> PB</strong> · Your PB: <span id="pu5Balance">2</span></p>
+        </div>
+        <button id="buyPU5" type="button" disabled>Buy — 20 PB</button>
+      </div>
+      <div id="pu6Row" class="upgrade" style="margin-top: 18px; padding-top: 16px; border-top: 1px solid #3c424c;" hidden>
+        <div>
+          <strong>PU6: Bundle</strong>
+          <p>Squares PU1's effect, doubles Box Power's IB boost, and Box Power's 10th root boosts Prestige Box gain.</p>
+          <p>Cost: 65 PB · Your PB: <span id="pu6Balance">25</span></p>
+        </div>
+        <button id="buyPU6" type="button" disabled>Buy — 65 PB</button>
+      </div>
+      <div id="pu7Row" class="upgrade" style="margin-top: 18px; padding-top: 16px; border-top: 1px solid #3c424c;" hidden>
+        <div>
+          <strong>PU7: The FInale of the prestige era</strong>
+          <p>Unlocks Reincarnation. Doubles PB and Coal gains, multiplies IB gain by 5, and multiplies Coal Generator capacity and Box Power by 1.5.</p>
+          <p><strong>Cost: 1000 PB</strong> · Your PB: <span id="pu7Balance">0</span></p>
+        </div>
+        <button id="buyPU7" type="button" disabled>Buy — 1000 PB</button>
+      </div>
+    </div>
+  </section>
+  <section id="lifeUpgradePanel" class="panel" hidden>
+    <div id="lifeTreeSubtabs" class="subtabs">
+      <button id="lifeStartSubtab" class="active" type="button">Start</button>
+      <button id="lifeAutomationSubtab" type="button" hidden>Automation Path</button>
+      <button id="lifeFeatureSubtab" type="button" hidden>Feature Path</button>
+      <button id="lifePowerSubtab" type="button" hidden>Power Path</button>
+    </div>
+    <div id="lifeStartPanel">
+      <div class="upgrade">
+        <div>
+          <strong>LU1: Welcome to life</strong>
+          <p>Multiplies IB gain by 4, PB gain by 2, Coal Box gains by 2, and Box Power generation by 3. Last upgrade of this path. Unlocks 3 new subtabs in the Life Upgrade Tree.</p>
+          <p><strong>Cost: 1 LB</strong> · Your LB: <span id="lu1Balance">0</span></p>
+        </div>
+        <button id="buyLU1" type="button" disabled>Buy — 1 LB</button>
+      </div>
+    </div>
+    <div id="lifeAutomationPanel" hidden>
+      <div class="upgrade">
+        <div>
+          <strong>LA1: Automation</strong>
+          <p>Automatically purchases IB upgrades. IB upgrades no longer spend any IB.</p>
+          <p><strong>Cost: 2 LB</strong> · Your LB: <span id="la1Balance">0</span></p>
+        </div>
+        <button id="buyLA1" type="button" disabled>Buy — 2 LB</button>
+      </div>
+    </div>
+    <div id="lifeFeaturePanel" hidden><p class="lifePlaceholder">The Feature Path is empty for now.</p></div>
+    <div id="lifePowerPanel" hidden><p class="lifePlaceholder">The Power Path is empty for now.</p></div>
+  </section>
+  <section id="powersPanel" class="panel" hidden>
+    <div class="subtabs">
+      <button id="boxPowerSubtab" class="active" type="button">Box Power</button>
+      <button id="mineSubtab" type="button">Mine</button>
+    </div>
+    <div id="boxPowerPanel">
+      <p class="powerStat">Coal Boxes: <strong id="coalBoxesDisplay">0.0</strong></p>
+      <p class="powerStat">Box Power: <strong id="boxPowerDisplay">0.0</strong></p>
+      <p class="powerStat">Box Power boosts IB by <strong id="boxPowerMultiplier">1.0</strong>x</p>
+      <p class="powerStat" id="pbBoostCounter" hidden>Box Power boosts PB gain by <strong id="pbBoostValue">1.0</strong>x</p>
+      <p class="powerStat">Generator fuel: <strong id="generatorFuelDisplay">0.0 / 2.0</strong> Coal Boxes</p>
+      <div class="powerControls">
+        <label for="coalInsertAmount">Coal Boxes to insert:</label>
+        <input id="coalInsertAmount" type="number" min="1" step="1" value="1" />
+        <button id="insertCoalButton" type="button">Insert Coal Boxes</button>
+        <button id="generatorToggleButton" type="button" disabled>Activate generator</button>
+      </div>
+      <p id="generatorStatus" class="hint">Insert Coal Boxes to fuel the generator.</p>
+    </div>
+    <div id="minePanel" hidden>
+      <p>Click a dark grey box to mine it. Each box has 3 HP; each click deals <span id="miningDamageDisplay">1</span> damage and has a 2-second cooldown.</p>
+      <p>Coal Boxes: <strong id="mineCoalBoxesDisplay">0.0</strong> · <span id="mineCooldownDisplay">Ready to mine</span></p>
+      <div id="mineField" aria-label="Mine field"></div>
+    </div>
+  </section>
+</main>
+<script>
+(() => {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const status = document.getElementById('status');
+  const scoreDisplay = document.getElementById('score');
+  const gameSubtabs = document.getElementById('gameSubtabs');
+  const mainSubtab = document.getElementById('mainSubtab');
+  const prestigeSubtab = document.getElementById('prestigeSubtab');
+  const reincarnationSubtab = document.getElementById('reincarnationSubtab');
+  const lifeBoxesCounter = document.getElementById('lifeBoxesCounter');
+  const prestigedCounter = document.getElementById('prestigedCounter');
+  const pbBoostCounter = document.getElementById('pbBoostCounter');
+  const prestigeInfo = document.getElementById('prestigeInfo');
+  const prestigeGainDisplay = document.getElementById('prestigeGain');
+  const upgrade4Row = document.getElementById('upgrade4Row');
+  const ibUpgradesSubtab = document.getElementById('ibUpgradesSubtab');
+  const prestigeUpgradesSubtab = document.getElementById('prestigeUpgradesSubtab');
+  const ibUpgradesPanel = document.getElementById('ibUpgradesPanel');
+  const prestigeUpgradesPanel = document.getElementById('prestigeUpgradesPanel');
+  const pu1BalanceDisplay = document.getElementById('pu1Balance');
+  const buyPU1Button = document.getElementById('buyPU1');
+  const upgrade4BalanceDisplay = document.getElementById('upgrade4Balance');
+  const buyUpgrade4Button = document.getElementById('buyUpgrade4');
+  const gameTab = document.getElementById('gameTab');
+  const upgradesTab = document.getElementById('upgradesTab');
+  const powersTab = document.getElementById('powersTab');
+  const lifeTreeTab = document.getElementById('lifeTreeTab');
+  const lifeUpgradePanel = document.getElementById('lifeUpgradePanel');
+  const powersPanel = document.getElementById('powersPanel');
+  const boxPowerSubtab = document.getElementById('boxPowerSubtab');
+  const mineSubtab = document.getElementById('mineSubtab');
+  const boxPowerPanel = document.getElementById('boxPowerPanel');
+  const minePanel = document.getElementById('minePanel');
+  const coalBoxesDisplay = document.getElementById('coalBoxesDisplay');
+  const mineCoalBoxesDisplay = document.getElementById('mineCoalBoxesDisplay');
+  const boxPowerDisplay = document.getElementById('boxPowerDisplay');
+  const boxPowerMultiplierDisplay = document.getElementById('boxPowerMultiplier');
+  const generatorFuelDisplay = document.getElementById('generatorFuelDisplay');
+  const coalInsertAmount = document.getElementById('coalInsertAmount');
+  const insertCoalButton = document.getElementById('insertCoalButton');
+  const generatorToggleButton = document.getElementById('generatorToggleButton');
+  const generatorStatus = document.getElementById('generatorStatus');
+  const mineCooldownDisplay = document.getElementById('mineCooldownDisplay');
+  const mineField = document.getElementById('mineField');
+  const gamePanel = document.getElementById('gamePanel');
+  const upgradesPanel = document.getElementById('upgradesPanel');
+  const upgradeBalance = document.getElementById('upgradeBalance');
+  const buyWallButton = document.getElementById('buyWall');
+  const upgrade2LevelDisplay = document.getElementById('upgrade2Level');
+  const upgrade2CostDisplay = document.getElementById('upgrade2Cost');
+  const upgrade2BalanceDisplay = document.getElementById('upgrade2Balance');
+  const buyUpgrade2Button = document.getElementById('buyUpgrade2');
+  const upgrade2Row = document.getElementById('upgrade2Row');
+  const upgrade3Row = document.getElementById('upgrade3Row');
+  const upgrade3BalanceDisplay = document.getElementById('upgrade3Balance');
+  const buyUpgrade3Button = document.getElementById('buyUpgrade3');
+  const W = canvas.width, H = canvas.height;
+  const platform = { x: 70, y: 360, w: 640, h: 24 };
+  const incinerator = { x: 735, y: 425, w: 155, h: 24 };
+  const boxSize = 48, half = boxSize / 2;
+  const gravity = 1500, restitution = 0.18, friction = 0.72;
+  let box, box2 = null, dragging = false, dragTarget = 'box', dragOffsetX = 0, dragOffsetY = 0;
+  let previousPointer = null, pointerVelocity = { x: 0, y: 0 };
+  let destroyed = false, particles = [], lastTime = 0, respawnAt = null;
+  let upgrade4Purchased = false, prestigedBoxes = 0, prestigeMode = false, reincarnationMode = false, isPrestigeSimulation = false;
+  let lifeBoxes = 0, reincarnationCount = 0, reincarnationBox = null, reincarnationDestroyed = false, reincarnationRespawnAt = null, reincarnationAnimationStart = null;
+  let lifeUpgrade1Purchased = false, lifeAutomation1Purchased = false, lifeTreeSubtab = 'start';
+  let currentTopTab = 'game';
+  let prestigeBox = null, prestigeDestroyed = false, prestigeRespawnAt = null;
+  let box2Destroyed = false, box2RespawnAt = null;
+  let incineratedCount = 0, accumulator = 0;
+  let wallPurchased = false, upgrade3Purchased = false;
+  let upgrade2Level = 0;
+  let prestigeUpgrade1Purchased = false;
+  let prestigeUpgradeUnlocked = false;
+  let prestigeUpgradeTab = false;
+  let prestigeUpgrade2Purchased = false;
+  let pu3Level = 0;
+  let pu4Purchased = false;
+  let pu5Level = 0;
+  let pu6Purchased = false;
+  let pu7Purchased = false;
+  let powersUnlocked = false;
+  let powersSubtab = 'boxPower';
+  let coalBoxes = 0;
+  let generatorFuel = 0;
+  let generatorActive = false;
+  let boxPower = 0;
+  let mineCooldownUntil = 0;
+  let mineBoxes = [];
+  let nextMineBoxId = 1;
+  // Format every displayed number with short-scale suffixes through 10^33,
+  // then switch to scientific notation for larger magnitudes.
+  const formatCounter = value => {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return '0';
+    const abs = Math.abs(number);
+    if (abs < 1000) {
+      const rounded = Math.round((number + Number.EPSILON) * 10) / 10;
+      return rounded % 1 === 0 ? String(rounded) : rounded.toFixed(1);
+    }
+    if (abs > 1e33) return number.toExponential(2).replace(/\.00e/, 'e').replace(/(\.\d)0e/, '$1e');
+    const suffixes = [
+      [1e33, 'De'], [1e30, 'No'], [1e27, 'Oc'], [1e24, 'SP'],
+      [1e21, 'Sx'], [1e18, 'Qt'], [1e15, 'Qa'], [1e12, 'T'],
+      [1e9, 'B'], [1e6, 'M'], [1e3, 'K']
+    ];
+    for (const [threshold, suffix] of suffixes) {
+      if (abs >= threshold) {
+        let scaled = number / threshold;
+        let rounded = Math.round((scaled + Math.sign(scaled) * Number.EPSILON) * 10) / 10;
+        if (Math.abs(rounded) >= 1000 && threshold < 1e33) {
+          const next = suffixes.find(([nextThreshold]) => nextThreshold > threshold);
+          if (next) {
+            scaled = number / next[0];
+            rounded = Math.round((scaled + Math.sign(scaled) * Number.EPSILON) * 10) / 10;
+            return (rounded % 1 === 0 ? String(rounded) : rounded.toFixed(1)) + next[1];
+          }
+        }
+        return (rounded % 1 === 0 ? String(rounded) : rounded.toFixed(1)) + suffix;
+      }
+    }
+    return String(number);
+  };
+  const upgrade2Cost = () => Math.ceil(5 * Math.pow(1.38, upgrade2Level));
+  const prestigeBoxBoost = () => pu6Purchased ? Math.max(1, boxPower) ** (1 / 10) : 1;
+  const prestigeBoxGain = () => Math.pow(Math.max(0, incineratedCount / 200), 1 / 1.5) * prestigeBoxBoost();
+  const boxPowerIBMultiplier = () => Math.max(1, boxPower) ** (1 / 5) * (pu6Purchased ? 2 : 1) * (pu7Purchased ? 5 : 1);
+  const spawn = { x: 155, y: platform.y - half };
+
+  function showTab(tab) {
+    currentTopTab = tab;
+    const showGame = tab === 'game';
+    gamePanel.hidden = !showGame;
+    upgradesPanel.hidden = tab !== 'upgrades';
+    powersPanel.hidden = tab !== 'powers';
+    lifeUpgradePanel.hidden = tab !== 'lifeTree';
+    gameTab.classList.toggle('active', showGame);
+    upgradesTab.classList.toggle('active', tab === 'upgrades');
+    powersTab.classList.toggle('active', tab === 'powers');
+    lifeTreeTab.classList.toggle('active', tab === 'lifeTree');
+  }
+  gameTab.addEventListener('click', () => showTab('game'));
+  upgradesTab.addEventListener('click', () => showTab('upgrades'));
+  powersTab.addEventListener('click', () => showTab('powers'));
+  lifeTreeTab.addEventListener('click', () => { setLifeTreeSubtab(lifeTreeSubtab); showTab('lifeTree'); });
+  boxPowerSubtab.addEventListener('click', () => setPowersSubtab('boxPower'));
+  mineSubtab.addEventListener('click', () => setPowersSubtab('mine'));
+  function setPowersSubtab(tab) {
+    powersSubtab = tab;
+    boxPowerSubtab.classList.toggle('active', tab === 'boxPower');
+    mineSubtab.classList.toggle('active', tab === 'mine');
+    boxPowerPanel.hidden = tab !== 'boxPower';
+    minePanel.hidden = tab !== 'mine';
+  }
+  ibUpgradesSubtab.addEventListener('click', () => setUpgradeSubtab(false));
+  prestigeUpgradesSubtab.addEventListener('click', () => setUpgradeSubtab(true));
+  function setUpgradeSubtab(on) {
+    prestigeUpgradeTab = !!on && prestigeUpgradeUnlocked;
+    ibUpgradesSubtab.classList.toggle('active', !prestigeUpgradeTab);
+    prestigeUpgradesSubtab.classList.toggle('active', prestigeUpgradeTab);
+    ibUpgradesPanel.hidden = prestigeUpgradeTab;
+    prestigeUpgradesPanel.hidden = !prestigeUpgradeTab;
+  }
+
+  const lifeStartSubtab = document.getElementById('lifeStartSubtab');
+  const lifeAutomationSubtab = document.getElementById('lifeAutomationSubtab');
+  const lifeFeatureSubtab = document.getElementById('lifeFeatureSubtab');
+  const lifePowerSubtab = document.getElementById('lifePowerSubtab');
+  function setLifeTreeSubtab(tab) {
+    lifeTreeSubtab = tab;
+    lifeStartSubtab.classList.toggle('active', tab === 'start');
+    lifeAutomationSubtab.classList.toggle('active', tab === 'automation');
+    lifeFeatureSubtab.classList.toggle('active', tab === 'feature');
+    lifePowerSubtab.classList.toggle('active', tab === 'power');
+    document.getElementById('lifeStartPanel').hidden = tab !== 'start';
+    document.getElementById('lifeAutomationPanel').hidden = tab !== 'automation';
+    document.getElementById('lifeFeaturePanel').hidden = tab !== 'feature';
+    document.getElementById('lifePowerPanel').hidden = tab !== 'power';
+  }
+  lifeStartSubtab.addEventListener('click', () => setLifeTreeSubtab('start'));
+  lifeAutomationSubtab.addEventListener('click', () => setLifeTreeSubtab('automation'));
+  lifeFeatureSubtab.addEventListener('click', () => setLifeTreeSubtab('feature'));
+  lifePowerSubtab.addEventListener('click', () => setLifeTreeSubtab('power'));
+
+  function updateUpgradeUI() {
+    if (lifeAutomation1Purchased) autoPurchaseIBUpgrades();
+    upgradeBalance.textContent = formatCounter(incineratedCount);
+    buyWallButton.disabled = wallPurchased || incineratedCount < 10;
+    buyWallButton.textContent = wallPurchased ? 'Purchased' : 'Buy — 10 IB';
+    const cost = upgrade2Cost();
+    upgrade2LevelDisplay.textContent = formatCounter(upgrade2Level);
+    upgrade2CostDisplay.textContent = formatCounter(cost);
+    upgrade2BalanceDisplay.textContent = formatCounter(incineratedCount);
+    upgrade2Row.hidden = !wallPurchased;
+    buyUpgrade2Button.disabled = incineratedCount < cost;
+    buyUpgrade2Button.textContent = 'Buy — ' + cost + ' IB';
+    upgrade3Row.hidden = !wallPurchased;
+    upgrade3BalanceDisplay.textContent = formatCounter(incineratedCount);
+    buyUpgrade3Button.disabled = upgrade3Purchased || incineratedCount < 50;
+    buyUpgrade3Button.textContent = upgrade3Purchased ? 'Purchased' : 'Buy — 50 IB';
+    upgrade4Row.hidden = !upgrade3Purchased;
+    upgrade4BalanceDisplay.textContent = formatCounter(incineratedCount);
+    buyUpgrade4Button.disabled = upgrade4Purchased || incineratedCount < 200;
+    buyUpgrade4Button.textContent = upgrade4Purchased ? 'Purchased' : 'Buy — 200 IB';
+    gameSubtabs.hidden = !upgrade4Purchased;
+    prestigeInfo.hidden = !(prestigeMode || reincarnationMode);
+    prestigeGainDisplay.textContent = formatCounter(prestigeBoxGain());
+    if (prestigedBoxes > 0) prestigeUpgradeUnlocked = true;
+    prestigeUpgradesSubtab.hidden = !prestigeUpgradeUnlocked;
+    pu1BalanceDisplay.textContent = formatCounter(prestigedBoxes);
+    buyPU1Button.disabled = prestigeUpgrade1Purchased || prestigedBoxes < 1;
+    buyPU1Button.textContent = prestigeUpgrade1Purchased ? 'Purchased' : 'Buy — 1 PB';
+    document.querySelector('#prestigeUpgradesPanel .upgrade p').textContent = pu6Purchased ? 'Quadruples IB gain.' : 'Doubles IB gain.';
+    document.getElementById('pu2Row').hidden = !prestigeUpgrade1Purchased;
+    document.getElementById('pu2Balance').textContent = formatCounter(prestigedBoxes);
+    document.getElementById('buyPU2').disabled = prestigeUpgrade2Purchased || prestigedBoxes < 2;
+    document.getElementById('buyPU2').textContent = prestigeUpgrade2Purchased ? 'Purchased' : 'Buy — 2 PB';
+    const pu3Cost = 5 * Math.pow(1.5, pu3Level);
+    document.getElementById('pu3Row').hidden = !prestigeUpgrade2Purchased;
+    document.getElementById('pu3Level').textContent = formatCounter(pu3Level);
+    document.getElementById('pu3Cost').textContent = formatCounter(pu3Cost);
+    document.getElementById('pu3Balance').textContent = formatCounter(prestigedBoxes);
+    document.getElementById('buyPU3').disabled = pu3Level >= 2 || prestigedBoxes < pu3Cost;
+    document.getElementById('buyPU3').textContent = pu3Level >= 2 ? 'Max level' : 'Buy — ' + formatCounter(pu3Cost) + ' PB';
+    document.getElementById('pu4Row').hidden = pu3Level < 1;
+    document.getElementById('pu4Balance').textContent = formatCounter(prestigedBoxes);
+    document.getElementById('pu4IBMult').textContent = formatCounter(1 + Math.sqrt(Math.max(0, prestigedBoxes)));
+    document.getElementById('pu4BPMult').textContent = formatCounter(Math.max(0, prestigedBoxes) ** (1 / 5));
+    document.getElementById('buyPU4').disabled = pu4Purchased || prestigedBoxes < 10;
+    document.getElementById('buyPU4').textContent = pu4Purchased ? 'Purchased' : 'Buy — 10 PB';
+    const pu5Cost = 20 * Math.pow(2, pu5Level);
+    document.getElementById('pu5Row').hidden = pu3Level < 1;
+    document.getElementById('pu5Level').textContent = formatCounter(pu5Level);
+    document.getElementById('pu5Cost').textContent = formatCounter(pu5Cost);
+    document.getElementById('pu5Balance').textContent = formatCounter(prestigedBoxes);
+    document.getElementById('buyPU5').disabled = pu5Level >= 3 || prestigedBoxes < pu5Cost;
+    document.getElementById('buyPU5').textContent = pu5Level >= 3 ? 'Max level' : 'Buy — ' + formatCounter(pu5Cost) + ' PB';
+    document.getElementById('pu6Row').hidden = pu5Level < 1;
+    document.getElementById('pu6Balance').textContent = formatCounter(prestigedBoxes);
+    document.getElementById('buyPU6').disabled = pu6Purchased || prestigedBoxes < 65;
+    document.getElementById('buyPU6').textContent = pu6Purchased ? 'Purchased' : 'Buy — 65 PB';
+    document.getElementById('pu7Row').hidden = pu5Level < 3;
+    document.getElementById('pu7Balance').textContent = formatCounter(prestigedBoxes);
+    document.getElementById('buyPU7').disabled = pu5Level < 3 || pu7Purchased || prestigedBoxes < 1000;
+    document.getElementById('buyPU7').textContent = pu7Purchased ? 'Purchased' : 'Buy — 1000 PB';
+    reincarnationSubtab.hidden = !pu7Purchased && reincarnationCount < 1;
+    lifeBoxesCounter.hidden = lifeBoxes < 1;
+    lifeBoxesCounter.textContent = 'Life Boxes: ' + formatCounter(lifeBoxes);
+    lifeTreeTab.hidden = lifeBoxes < 1 && !lifeUpgrade1Purchased;
+    lifeAutomationSubtab.hidden = !lifeUpgrade1Purchased;
+    lifeFeatureSubtab.hidden = !lifeUpgrade1Purchased;
+    lifePowerSubtab.hidden = !lifeUpgrade1Purchased;
+    document.getElementById('lu1Balance').textContent = formatCounter(lifeBoxes);
+    document.getElementById('buyLU1').disabled = lifeUpgrade1Purchased || lifeBoxes < 1;
+    document.getElementById('buyLU1').textContent = lifeUpgrade1Purchased ? 'Purchased' : 'Buy — 1 LB';
+    document.getElementById('la1Balance').textContent = formatCounter(lifeBoxes);
+    document.getElementById('buyLA1').disabled = !lifeUpgrade1Purchased || lifeAutomation1Purchased || lifeBoxes < 2;
+    document.getElementById('buyLA1').textContent = lifeAutomation1Purchased ? 'Purchased' : 'Buy — 2 LB';
+    powersTab.hidden = !powersUnlocked;
+    if (prestigeUpgradeTab && !prestigeUpgradeUnlocked) setUpgradeSubtab(false);
+    prestigedCounter.hidden = prestigedBoxes < 1;
+    prestigedCounter.textContent = 'Prestiged Boxes: ' + formatCounter(prestigedBoxes);
+    pbBoostCounter.hidden = !pu6Purchased;
+    lifeTreeTab.hidden = lifeBoxes < 1 && !lifeUpgrade1Purchased;
+    updatePowerUI();
+  }
+  function autoPurchaseIBUpgrades() {
+    if (!wallPurchased && incineratedCount >= 10) wallPurchased = true;
+    if (wallPurchased) {
+      let safety = 0;
+      while (incineratedCount >= upgrade2Cost() && safety < 10000) {
+        upgrade2Level++;
+        safety++;
+      }
+      if (!upgrade3Purchased && incineratedCount >= 50) {
+        upgrade3Purchased = true;
+        resetBox2();
+      }
+    }
+    if (upgrade3Purchased && !upgrade4Purchased && incineratedCount >= 200) {
+      upgrade4Purchased = true;
+      prestigeBox = { x: spawn.x, y: spawn.y, vx: 0, vy: 0, angle: 0, av: 0, grounded: true };
+    }
+  }
+  document.getElementById('buyLU1').addEventListener('click', () => {
+    if (lifeUpgrade1Purchased || lifeBoxes < 1) return;
+    lifeBoxes -= 1;
+    lifeUpgrade1Purchased = true;
+    setLifeTreeSubtab('start');
+    updateUpgradeUI();
+  });
+  document.getElementById('buyLA1').addEventListener('click', () => {
+    if (!lifeUpgrade1Purchased || lifeAutomation1Purchased || lifeBoxes < 2) return;
+    lifeBoxes -= 2;
+    lifeAutomation1Purchased = true;
+    updateUpgradeUI();
+  });
+
+  buyWallButton.addEventListener('click', () => {
+    if (wallPurchased || incineratedCount < (lifeAutomation1Purchased ? 10 : 10)) return;
+    if (!lifeAutomation1Purchased) incineratedCount -= 10;
+    wallPurchased = true;
+    scoreDisplay.textContent = 'Incinerated boxes: ' + formatCounter(incineratedCount);
+    updateUpgradeUI();
+  });
+  buyUpgrade2Button.addEventListener('click', () => {
+    const cost = upgrade2Cost();
+    if (!wallPurchased || incineratedCount < cost) return;
+    if (!lifeAutomation1Purchased) incineratedCount -= cost;
+    upgrade2Level++;
+    scoreDisplay.textContent = 'Incinerated boxes: ' + formatCounter(incineratedCount);
+    updateUpgradeUI();
+  });
+  buyUpgrade3Button.addEventListener('click', () => {
+    if (!wallPurchased || upgrade3Purchased || incineratedCount < 50) return;
+    if (!lifeAutomation1Purchased) incineratedCount -= 50; upgrade3Purchased = true; resetBox2();
+    scoreDisplay.textContent = 'Incinerated boxes: ' + formatCounter(incineratedCount);
+    updateUpgradeUI();
+  });
+  buyUpgrade4Button.addEventListener('click', () => {
+    if (!upgrade3Purchased || upgrade4Purchased || incineratedCount < 200) return;
+    if (!lifeAutomation1Purchased) incineratedCount -= 200; upgrade4Purchased = true;
+    prestigeBox = { x: spawn.x, y: spawn.y, vx: 0, vy: 0, angle: 0, av: 0, grounded: true };
+    scoreDisplay.textContent = 'Incinerated boxes: ' + formatCounter(incineratedCount);
+    updateUpgradeUI();
+  });
+  buyPU1Button.addEventListener('click', () => {
+    if (prestigeUpgrade1Purchased || prestigedBoxes < 1) return;
+    prestigedBoxes -= 1;
+    prestigeUpgrade1Purchased = true;
+    updateUpgradeUI();
+  });
+  document.getElementById('buyPU2').addEventListener('click', () => {
+    if (!prestigeUpgrade1Purchased || prestigeUpgrade2Purchased || prestigedBoxes < 2) return;
+    prestigedBoxes -= 2;
+    prestigeUpgrade2Purchased = true;
+    powersUnlocked = true;
+    updateUpgradeUI();
+  });
+
+  document.getElementById('buyPU3').addEventListener('click', () => {
+    const cost = 5 * Math.pow(1.5, pu3Level);
+    if (!prestigeUpgrade2Purchased || pu3Level >= 2 || prestigedBoxes < cost) return;
+    prestigedBoxes -= cost;
+    pu3Level++;
+    updateUpgradeUI();
+  });
+  document.getElementById('buyPU4').addEventListener('click', () => {
+    if (pu3Level < 1 || pu4Purchased || prestigedBoxes < 10) return;
+    prestigedBoxes -= 10;
+    pu4Purchased = true;
+    updateUpgradeUI();
+  });
+  document.getElementById('buyPU5').addEventListener('click', () => {
+    const cost = 20 * Math.pow(2, pu5Level);
+    if (pu3Level < 1 || pu5Level >= 3 || prestigedBoxes < cost) return;
+    prestigedBoxes -= cost;
+    pu5Level++;
+    updateUpgradeUI();
+  });
+  document.getElementById('buyPU6').addEventListener('click', () => {
+    if (pu5Level < 1 || pu6Purchased || prestigedBoxes < 65) return;
+    prestigedBoxes -= 65;
+    pu6Purchased = true;
+    updateUpgradeUI();
+  });
+  document.getElementById('buyPU7').addEventListener('click', () => {
+    if (pu5Level < 3 || pu7Purchased || prestigedBoxes < 1000) return;
+    prestigedBoxes -= 1000;
+    pu7Purchased = true;
+    reincarnationBox = { x: spawn.x, y: spawn.y, vx: 0, vy: 0, angle: 0, av: 0, grounded: true };
+    updateUpgradeUI();
+  });
+
+  function updatePowerUI() {
+    document.getElementById('miningDamageDisplay').textContent = formatCounter(1 + pu3Level);
+    const multiplier = boxPowerIBMultiplier();
+    coalBoxesDisplay.textContent = formatCounter(coalBoxes);
+    mineCoalBoxesDisplay.textContent = formatCounter(coalBoxes);
+    boxPowerDisplay.textContent = formatCounter(boxPower);
+    boxPowerMultiplierDisplay.textContent = formatCounter(multiplier);
+    if (pbBoostCounter) { pbBoostCounter.hidden = !pu6Purchased; document.getElementById('pbBoostValue').textContent = formatCounter(prestigeBoxBoost()); }
+    const generatorCapacity = (2 + 2 * pu3Level) * (pu7Purchased ? 1.5 : 1);
+    generatorFuelDisplay.textContent = formatCounter(generatorFuel) + ' / ' + formatCounter(generatorCapacity);
+    const availableSpace = Math.floor(generatorCapacity - generatorFuel + 1e-9);
+    coalInsertAmount.max = Math.min(Math.floor(coalBoxes), availableSpace);
+    insertCoalButton.disabled = !powersUnlocked || availableSpace < 1 || coalBoxes < 1;
+    generatorToggleButton.disabled = generatorFuel <= 0 && !generatorActive;
+    generatorToggleButton.textContent = generatorActive ? 'Deactivate generator' : 'Activate generator';
+    generatorStatus.textContent = generatorActive ? 'Generator active: +' + formatCounter(Math.pow(2, pu3Level) * (pu4Purchased ? Math.max(0, prestigedBoxes) ** (1 / 5) : 1) * (pu7Purchased ? 1.5 : 1) * (lifeUpgrade1Purchased ? 3 : 1)) + ' Box Power/s, consuming 0.1 Coal Boxes/s.' : 'Insert up to ' + formatCounter(generatorCapacity) + ' Coal Boxes to fuel the generator.';
+    const remaining = Math.max(0, mineCooldownUntil - performance.now());
+    mineCooldownDisplay.textContent = remaining > 0 ? 'Mining cooldown: ' + formatCounter(remaining / 1000) + 's' : 'Ready to mine';
+    for (const item of mineBoxes) {
+      const button = mineField.querySelector('[data-mine-id="' + item.id + '"]');
+      if (button) button.innerHTML = 'Box<br><small>' + formatCounter(item.hp) + ' / ' + formatCounter(3) + ' HP</small>';
+      if (button) button.disabled = remaining > 0;
+    }
+  }
+
+  function spawnMineBox() {
+    if (mineBoxes.length >= 5) return;
+    const item = { id: nextMineBoxId++, hp: 3, x: 8 + Math.random() * 84, y: 8 + Math.random() * 84 };
+    // Try to keep the randomly placed boxes apart so they remain easy to click.
+    for (let attempt = 0; attempt < 30; attempt++) {
+      if (mineBoxes.every(other => Math.hypot(other.x - item.x, other.y - item.y) >= 14)) break;
+      item.x = 8 + Math.random() * 84;
+      item.y = 8 + Math.random() * 84;
+    }
+    mineBoxes.push(item);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'mineBox';
+    button.dataset.mineId = String(item.id);
+    button.style.setProperty('--mine-x', item.x + '%');
+    button.style.setProperty('--mine-y', item.y + '%');
+    button.innerHTML = 'Box<br><small>' + formatCounter(3) + ' / ' + formatCounter(3) + ' HP</small>';
+    button.addEventListener('click', () => {
+      const now = performance.now();
+      if (now < mineCooldownUntil) return;
+      const target = mineBoxes.find(box => box.id === item.id);
+      if (!target) return;
+      mineCooldownUntil = now + 2000;
+      target.hp -= 1 + pu3Level;
+      if (target.hp <= 0) {
+        mineBoxes = mineBoxes.filter(box => box.id !== item.id);
+        button.remove();
+        coalBoxes += (pu7Purchased ? 2 : 1) * (lifeUpgrade1Purchased ? 2 : 1);
+      }
+      updatePowerUI();
+    });
+    mineField.appendChild(button);
+  }
+  for (let i = 0; i < 5; i++) spawnMineBox();
+  setInterval(() => { if (mineBoxes.length < 5) spawnMineBox(); }, 3000);
+
+  // Save the complete gameplay state locally every five seconds.
+  const SAVE_KEY = 'boxIncineratorSave_v1';
+  function saveGame() {
+    try {
+      const remaining = deadline => deadline === null ? null : Math.max(0, deadline - performance.now());
+      const save = {
+        incineratedCount, prestigedBoxes, lifeBoxes, reincarnationCount,
+        wallPurchased, upgrade3Purchased, upgrade2Level, upgrade4Purchased,
+        prestigeUpgrade1Purchased, prestigeUpgradeUnlocked, prestigeUpgrade2Purchased,
+        pu3Level, pu4Purchased, pu5Level, pu6Purchased, pu7Purchased,
+        powersUnlocked, coalBoxes, generatorFuel, generatorActive, boxPower,
+        lifeUpgrade1Purchased, lifeAutomation1Purchased, lifeTreeSubtab,
+        currentTopTab, prestigeUpgradeTab, powersSubtab, prestigeMode, reincarnationMode,
+        isPrestigeSimulation, box, box2, prestigeBox, reincarnationBox,
+        destroyed, box2Destroyed, prestigeDestroyed, reincarnationDestroyed,
+        respawnRemaining: remaining(respawnAt), box2RespawnRemaining: remaining(box2RespawnAt),
+        prestigeRespawnRemaining: remaining(prestigeRespawnAt), reincarnationRespawnRemaining: remaining(reincarnationRespawnAt),
+        mineCooldownRemaining: Math.max(0, mineCooldownUntil - performance.now()),
+        mineBoxes, nextMineBoxId, statusText: status.textContent
+      };
+      localStorage.setItem(SAVE_KEY, JSON.stringify(save));
+    } catch (error) {
+      console.warn('Box Incinerator autosave failed:', error);
+    }
+  }
+  function loadGame() {
+    let save;
+    try {
+      const raw = localStorage.getItem(SAVE_KEY);
+      if (!raw) return false;
+      save = JSON.parse(raw);
+      if (!save || typeof save !== 'object') return false;
+    } catch (error) {
+      console.warn('Box Incinerator save could not be loaded:', error);
+      return false;
+    }
+    incineratedCount = Number.isFinite(save.incineratedCount) ? save.incineratedCount : 0;
+    prestigedBoxes = Number.isFinite(save.prestigedBoxes) ? save.prestigedBoxes : 0;
+    lifeBoxes = Number.isFinite(save.lifeBoxes) ? save.lifeBoxes : 0;
+    reincarnationCount = Number.isFinite(save.reincarnationCount) ? save.reincarnationCount : 0;
+    upgrade2Level = Number.isFinite(save.upgrade2Level) ? save.upgrade2Level : 0;
+    pu3Level = Number.isFinite(save.pu3Level) ? save.pu3Level : 0;
+    pu5Level = Number.isFinite(save.pu5Level) ? save.pu5Level : 0;
+    coalBoxes = Number.isFinite(save.coalBoxes) ? save.coalBoxes : 0;
+    generatorFuel = Number.isFinite(save.generatorFuel) ? save.generatorFuel : 0;
+    boxPower = Number.isFinite(save.boxPower) ? save.boxPower : 0;
+    nextMineBoxId = Number.isFinite(save.nextMineBoxId) ? save.nextMineBoxId : 1;
+    for (const key of ['wallPurchased','upgrade3Purchased','upgrade4Purchased','prestigeUpgrade1Purchased','prestigeUpgradeUnlocked','prestigeUpgrade2Purchased','pu4Purchased','pu6Purchased','pu7Purchased','powersUnlocked','generatorActive','lifeUpgrade1Purchased','lifeAutomation1Purchased','prestigeMode','reincarnationMode','isPrestigeSimulation','destroyed','box2Destroyed','prestigeDestroyed','reincarnationDestroyed','prestigeUpgradeTab']) {
+      if (typeof save[key] === 'boolean') {
+        switch (key) {
+          case 'wallPurchased': wallPurchased = save[key]; break;
+          case 'upgrade3Purchased': upgrade3Purchased = save[key]; break;
+          case 'upgrade4Purchased': upgrade4Purchased = save[key]; break;
+          case 'prestigeUpgrade1Purchased': prestigeUpgrade1Purchased = save[key]; break;
+          case 'prestigeUpgradeUnlocked': prestigeUpgradeUnlocked = save[key]; break;
+          case 'prestigeUpgrade2Purchased': prestigeUpgrade2Purchased = save[key]; break;
+          case 'pu4Purchased': pu4Purchased = save[key]; break;
+          case 'pu6Purchased': pu6Purchased = save[key]; break;
+          case 'pu7Purchased': pu7Purchased = save[key]; break;
+          case 'powersUnlocked': powersUnlocked = save[key]; break;
+          case 'generatorActive': generatorActive = save[key]; break;
+          case 'lifeUpgrade1Purchased': lifeUpgrade1Purchased = save[key]; break;
+          case 'lifeAutomation1Purchased': lifeAutomation1Purchased = save[key]; break;
+          case 'prestigeMode': prestigeMode = save[key]; break;
+          case 'reincarnationMode': reincarnationMode = save[key]; break;
+          case 'isPrestigeSimulation': isPrestigeSimulation = save[key]; break;
+          case 'destroyed': destroyed = save[key]; break;
+          case 'box2Destroyed': box2Destroyed = save[key]; break;
+          case 'prestigeDestroyed': prestigeDestroyed = save[key]; break;
+          case 'reincarnationDestroyed': reincarnationDestroyed = save[key]; break;
+          case 'prestigeUpgradeTab': prestigeUpgradeTab = save[key]; break;
+        }
+      }
+    }
+    for (const key of ['box','box2','prestigeBox','reincarnationBox']) {
+      if (save[key] === null) { if (key === 'box2') box2 = null; else if (key === 'prestigeBox') prestigeBox = null; else if (key === 'reincarnationBox') reincarnationBox = null; }
+      else if (save[key] && ['x','y','vx','vy','angle','av'].every(k => Number.isFinite(save[key][k]))) {
+        const value = {...save[key]};
+        if (key === 'box') box = value;
+        if (key === 'box2') box2 = value;
+        if (key === 'prestigeBox') prestigeBox = value;
+        if (key === 'reincarnationBox') reincarnationBox = value;
+      }
+    }
+    const deadline = key => Number.isFinite(save[key]) ? performance.now() + save[key] : null;
+    respawnAt = deadline('respawnRemaining');
+    box2RespawnAt = deadline('box2RespawnRemaining');
+    prestigeRespawnAt = deadline('prestigeRespawnRemaining');
+    reincarnationRespawnAt = deadline('reincarnationRespawnRemaining');
+    mineCooldownUntil = performance.now() + (Number.isFinite(save.mineCooldownRemaining) ? save.mineCooldownRemaining : 0);
+    lifeTreeSubtab = ['start','automation','feature','power'].includes(save.lifeTreeSubtab) ? save.lifeTreeSubtab : 'start';
+    currentTopTab = ['game','upgrades','powers','lifeTree'].includes(save.currentTopTab) ? save.currentTopTab : 'game';
+    powersSubtab = ['boxPower','mine'].includes(save.powersSubtab) ? save.powersSubtab : 'boxPower';
+    if (typeof save.statusText === 'string') status.textContent = save.statusText;
+    if (Array.isArray(save.mineBoxes)) {
+      mineField.innerHTML = '';
+      mineBoxes = [];
+      for (const savedMine of save.mineBoxes.slice(0,5)) {
+        spawnMineBox();
+        const created = mineBoxes[mineBoxes.length - 1];
+        if (!created) continue;
+        if (Number.isFinite(savedMine.hp)) created.hp = savedMine.hp;
+        if (Number.isFinite(savedMine.x)) created.x = savedMine.x;
+        if (Number.isFinite(savedMine.y)) created.y = savedMine.y;
+        if (Number.isFinite(savedMine.id)) created.id = savedMine.id;
+        const button = mineField.querySelector('[data-mine-id="' + (nextMineBoxId - 1) + '"]');
+        if (button) {
+          button.dataset.mineId = String(created.id);
+          button.style.setProperty('--mine-x', created.x + '%');
+          button.style.setProperty('--mine-y', created.y + '%');
+          button.innerHTML = 'Box<br><small>' + formatCounter(created.hp) + ' / 3 HP</small>';
+        }
+      }
+      nextMineBoxId = Math.max(nextMineBoxId, ...mineBoxes.map(item => item.id + 1), 1);
+    }
+    setPowersSubtab(powersSubtab);
+    setLifeTreeSubtab(lifeTreeSubtab);
+    showTab(currentTopTab);
+    setUpgradeSubtab(prestigeUpgradeTab);
+    setPrestigeMode(prestigeMode);
+    if (reincarnationMode) setReincarnationMode(true);
+    updateUpgradeUI();
+    updatePowerUI();
+    scoreDisplay.textContent = 'Incinerated boxes: ' + formatCounter(incineratedCount);
+    return true;
+  }
+  setInterval(saveGame, 5000);
+  window.addEventListener('beforeunload', saveGame);
+
+  insertCoalButton.addEventListener('click', () => {
+    const amount = Number(coalInsertAmount.value);
+    if (!Number.isSafeInteger(amount) || amount < 1 || amount > coalBoxes || amount > Math.floor(((2 + 2 * pu3Level) * (pu7Purchased ? 1.5 : 1)) - generatorFuel + 1e-9)) return;
+    coalBoxes -= amount;
+    generatorFuel += amount;
+    coalInsertAmount.value = '';
+    updatePowerUI();
+  });
+  generatorToggleButton.addEventListener('click', () => {
+    if (generatorActive) generatorActive = false;
+    else if (generatorFuel > 0) generatorActive = true;
+    updatePowerUI();
+  });
+
+  mainSubtab.addEventListener('click', () => setPrestigeMode(false));
+  prestigeSubtab.addEventListener('click', () => setPrestigeMode(true));
+  reincarnationSubtab.addEventListener('click', () => setReincarnationMode(true));
+  function setReincarnationMode(on) {
+    reincarnationMode = !!on && (pu7Purchased || reincarnationCount > 0);
+    prestigeMode = false;
+    mainSubtab.classList.toggle('active', false);
+    prestigeSubtab.classList.toggle('active', false);
+    reincarnationSubtab.classList.toggle('active', reincarnationMode);
+    prestigeInfo.hidden = !reincarnationMode;
+    document.getElementById('resetInfoText').textContent = 'Reincarnating will reset EVERYTHING before this point except permanent upgrades, for life boxes.';
+    document.getElementById('prestigeGainLine').hidden = reincarnationMode;
+    document.getElementById('reincarnationGainLine').hidden = !reincarnationMode;
+    status.textContent = 'Throw the dark blue box into the light blue Reincarnator. You need at least 2.5K PB.';
+    updateUpgradeUI();
+  }
+  function setPrestigeMode(on) {
+    reincarnationMode = false;
+    reincarnationSubtab.classList.toggle('active', false);
+    document.getElementById('resetInfoText').textContent = 'Prestiging (prestiging the green box) resets incinerated boxes and IB upgrades for Prestiged boxes. First prestige will unlock prestige upgrades.';
+    document.getElementById('prestigeGainLine').hidden = false;
+    document.getElementById('reincarnationGainLine').hidden = true;
+    prestigeMode = !!on && upgrade4Purchased;
+    mainSubtab.classList.toggle('active', !prestigeMode);
+    prestigeSubtab.classList.toggle('active', prestigeMode);
+    prestigeInfo.hidden = !prestigeMode;
+    status.textContent = prestigeMode ? 'Throw the green box into the blue prestiger. You need at least 200 IB to prestige.' : 'Get the box into the incinerator!';
+    updateUpgradeUI();
+  }
+
+  function reset() {
+    box = { x: spawn.x, y: spawn.y, vx: 0, vy: 0, angle: 0, av: 0, grounded: true };
+    dragging = false; destroyed = false; particles = []; respawnAt = null;
+    previousPointer = null; pointerVelocity = { x: 0, y: 0 };
+    status.textContent = 'Get the box into the incinerator!';
+  }
+  function resetBox2() {
+    box2 = { x: spawn.x + 58, y: spawn.y, vx: 0, vy: 0, angle: 0, av: 0 };
+    box2Destroyed = false; box2RespawnAt = null;
+  }
+  function selectedBox() { return dragTarget === 'box2' ? box2 : box; }
+
+  function pointerPos(e) {
+    const r = canvas.getBoundingClientRect();
+    return { x: (e.clientX-r.left)*W/r.width, y: (e.clientY-r.top)*H/r.height };
+  }
+  function localPoint(p) {
+    const dx=p.x-box.x, dy=p.y-box.y, c=Math.cos(box.angle), s=Math.sin(box.angle);
+    return { x:dx*c+dy*s, y:-dx*s+dy*c };
+  }
+  canvas.addEventListener('pointerdown', e => {
+    const p=pointerPos(e);
+    if (reincarnationMode && reincarnationBox && !reincarnationDestroyed) {
+      const dx=p.x-reincarnationBox.x,dy=p.y-reincarnationBox.y,c=Math.cos(reincarnationBox.angle),ss=Math.sin(reincarnationBox.angle);
+      const lx=dx*c+dy*ss,ly=-dx*ss+dy*c;
+      if(Math.abs(lx)<=half && Math.abs(ly)<=half){dragTarget='reincarnationBox';dragging=true;dragOffsetX=p.x-reincarnationBox.x;dragOffsetY=p.y-reincarnationBox.y;previousPointer={...p,t:performance.now()};pointerVelocity={x:0,y:0};reincarnationBox.vx=reincarnationBox.vy=reincarnationBox.av=0;canvas.setPointerCapture(e.pointerId);return;}
+      return;
+    }
+    if (prestigeMode && upgrade4Purchased && prestigeBox && !prestigeDestroyed) {
+      const dx=p.x-prestigeBox.x,dy=p.y-prestigeBox.y,c=Math.cos(prestigeBox.angle),ss=Math.sin(prestigeBox.angle);
+      const lx=dx*c+dy*ss,ly=-dx*ss+dy*c;
+      if(Math.abs(lx)<=half && Math.abs(ly)<=half){dragTarget='prestigeBox';dragging=true;dragOffsetX=p.x-prestigeBox.x;dragOffsetY=p.y-prestigeBox.y;previousPointer={...p,t:performance.now()};pointerVelocity={x:0,y:0};prestigeBox.vx=prestigeBox.vy=prestigeBox.av=0;canvas.setPointerCapture(e.pointerId);return;}
+      return;
+    }
+    if (upgrade3Purchased && box2 && !box2Destroyed) {
+      const q2={x:p.x-box2.x,y:p.y-box2.y};
+      const c2=Math.cos(box2.angle),s2=Math.sin(box2.angle);
+      const lx=q2.x*c2+q2.y*s2,ly=-q2.x*s2+q2.y*c2;
+      if(Math.abs(lx)<=half && Math.abs(ly)<=half) dragTarget='box2';
+      else dragTarget='box';
+    } else dragTarget='box';
+    const target=selectedBox();
+    if (!target || (dragTarget==='box' && (destroyed || respawnAt!==null)) || (dragTarget==='box2' && box2Destroyed)) return;
+    const q=dragTarget==='box' ? localPoint(p) : (()=>{const dx=p.x-target.x,dy=p.y-target.y,c=Math.cos(target.angle),ss=Math.sin(target.angle);return{x:dx*c+dy*ss,y:-dx*ss+dy*c};})();
+    if (Math.abs(q.x)<=half && Math.abs(q.y)<=half) {
+      dragging=true; dragOffsetX=p.x-target.x; dragOffsetY=p.y-target.y;
+      previousPointer={...p,t:performance.now()}; pointerVelocity={x:0,y:0};
+      target.vx=target.vy=target.av=0; if(dragTarget==='box') target.grounded=false; canvas.setPointerCapture(e.pointerId);
+    }
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    const p=pointerPos(e), now=performance.now();
+    if (previousPointer) {
+      const dt=Math.max(0.001,(now-previousPointer.t)/1000);
+      pointerVelocity.x=(p.x-previousPointer.x)/dt;
+      pointerVelocity.y=(p.y-previousPointer.y)/dt;
+    }
+    const target=dragTarget==='reincarnationBox' ? reincarnationBox : (dragTarget==='prestigeBox' ? prestigeBox : selectedBox());
+    target.x=p.x-dragOffsetX; target.y=p.y-dragOffsetY;
+    previousPointer={...p,t:now};
+  });
+  function releaseBox() {
+    if (!dragging) return;
+    dragging=false;
+    const target=dragTarget==='reincarnationBox' ? reincarnationBox : (dragTarget==='prestigeBox' ? prestigeBox : selectedBox());
+    target.vx=clamp(pointerVelocity.x,-1100,1100);
+    target.vy=clamp(pointerVelocity.y,-1100,1100);
+    // A sideways throw adds a little spin, while keeping spin bounded.
+    target.av=clamp((pointerVelocity.x*(target.y-(previousPointer?.y ?? target.y)))*0.0005 + target.vx*0.012,-9,9);
+    previousPointer=null;
+  }
+  canvas.addEventListener('pointerup', releaseBox);
+  canvas.addEventListener('pointercancel', releaseBox);
+  function clamp(v,min,max){ return Math.max(min,Math.min(max,v)); }
+
+  function corners() {
+    const c=Math.cos(box.angle), s=Math.sin(box.angle);
+    return [[-half,-half],[half,-half],[half,half],[-half,half]].map(([x,y])=>({
+      x:box.x+x*c-y*s, y:box.y+x*s+y*c, lx:x, ly:y
+    }));
+  }
+  function spawnParticles() {
+    for(let i=0;i<34;i++) {
+      const a=Math.random()*Math.PI*2, speed=70+Math.random()*260;
+      particles.push({x:box.x,y:box.y,vx:Math.cos(a)*speed,vy:Math.sin(a)*speed-100,
+        life:0.6+Math.random()*0.7,maxLife:1.3,size:3+Math.random()*7});
+    }
+  }
+  function endBox(reason, scored=false) {
+    if (destroyed || respawnAt !== null) return;
+    destroyed=true; respawnAt=performance.now()+(upgrade3Purchased?2500:5000);
+    if (isPrestigeSimulation) {
+      if (reincarnationMode) {
+        if (scored && prestigedBoxes >= 2500) performReincarnation();
+        else if (scored) status.textContent = 'You need at least 2.5K PB to reincarnate. The dark blue box will respawn.';
+        return;
+      }
+      if (scored && incineratedCount >= 200) {
+        const gainedPrestigeBoxes = prestigeBoxGain();
+        incineratedCount = 0; prestigedBoxes += gainedPrestigeBoxes * (pu7Purchased ? 2 : 1) * (lifeUpgrade1Purchased ? 2 : 1);
+        scoreDisplay.textContent = 'Incinerated boxes: ' + formatCounter(incineratedCount);
+        particles.push(...Array.from({length:44},()=>{const a=Math.random()*Math.PI*2,sp=90+Math.random()*270;return{x:box.x,y:box.y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-110,life:0.7+Math.random()*0.7,maxLife:1.4,size:3+Math.random()*7,prestige:true};}));
+        status.textContent = 'Prestige reset! You gained ' + formatCounter(gainedPrestigeBoxes) + ' Prestiged Boxes.';
+        box = { x: spawn.x, y: spawn.y, vx: 0, vy: 0, angle: 0, av: 0, grounded: true };
+        // Prestige resets upgrades 2 and 3, while upgrades 1 and 4 stay purchased.
+        wallPurchased = false;
+        upgrade2Level = 0;
+        upgrade3Purchased = false;
+        box2 = null;
+        box2Destroyed = false;
+        box2RespawnAt = null;
+        updateUpgradeUI();
+      } else if (scored) {
+        status.textContent = 'You need at least 200 current IB to prestige. The green box will respawn.';
+      }
+      return;
+    }
+    if(scored) { incineratedCount += (1 + upgrade2Level) * (prestigeUpgrade1Purchased ? (pu6Purchased ? 4 : 2) : 1) * boxPowerIBMultiplier() * (pu4Purchased ? 1 + Math.sqrt(Math.max(0, prestigedBoxes)) : 1) * (lifeUpgrade1Purchased ? 4 : 1); scoreDisplay.textContent='Incinerated boxes: '+formatCounter(incineratedCount); spawnParticles(); updateUpgradeUI(); }
+    status.textContent=reason+' The box will reappear in '+(upgrade3Purchased?'2.5':'5')+' seconds.';
+  }
+
+  // Resolves contact against a horizontal platform using the actual rotated corners.
+  function collideSurface(surface, isIncinerator) {
+    const pts=corners();
+    const candidates=pts.filter(p=>p.x>=surface.x && p.x<=surface.x+surface.w && p.y>=surface.y);
+    if(!candidates.length) return false;
+    const contacts=candidates.filter(p=>p.y<=surface.y+18);
+    if(!contacts.length) return false;
+    const contactY=Math.min(...contacts.map(p=>p.y));
+    // Only resolve when the box is moving down or has penetrated the surface slightly.
+    if(box.vy-box.av*half < -20 && contactY < surface.y) return false;
+    const deepest=Math.max(...contacts.map(p=>p.y));
+    const penetration=deepest-surface.y;
+    if(penetration < -2) return false;
+    box.y-=Math.max(0,penetration);
+    const touching=contacts.filter(p=>p.y>=surface.y-2);
+    if(!touching.length) return false;
+    // Average contact-point velocity includes rotation; impact creates torque around the center.
+    let totalImpulse=0;
+    for(const p of touching) {
+      const rx=p.x-box.x, ry=p.y-box.y;
+      const pointVy=box.vy+box.av*rx;
+      if(pointVy>0) {
+        const impulse=-(1+restitution)*pointVy/(1+((rx*rx)/(boxSize*boxSize/6)));
+        box.vy+=impulse;
+        box.av+=rx*impulse/(boxSize*boxSize/6);
+        totalImpulse+=Math.abs(impulse);
+      }
+    }
+    // Coulomb-like sliding friction and rotational damping at contact.
+    const normalForce=Math.max(0,totalImpulse);
+    box.vx*=Math.pow(0.985,1);
+    const frictionDrop=Math.min(Math.abs(box.vx), friction*normalForce*0.18+18);
+    box.vx-=Math.sign(box.vx)*frictionDrop;
+    box.av*=0.82;
+    if(Math.abs(box.vy)<32) box.vy=0;
+    if(Math.abs(box.av)<0.12) box.av=0;
+    if(Math.abs(box.vx)<8) box.vx=0;
+    if(isIncinerator) endBox('Incinerated!',true);
+    return true;
+  }
+
+  function simulateOneBox(dt) {
+    if(dragging || destroyed) return;
+    const old={x:box.x,y:box.y,angle:box.angle};
+    box.vy+=gravity*dt;
+    // Air drag, applied consistently to linear and angular velocity.
+    box.vx*=Math.exp(-0.16*dt); box.vy*=Math.exp(-0.025*dt); box.av*=Math.exp(-0.12*dt);
+    box.x+=box.vx*dt; box.y+=box.vy*dt; box.angle+=box.av*dt;
+    const touchingMain=collideSurface(platform,false);
+    if(touchingMain && pu5Level > 0 && !destroyed && !isPrestigeSimulation) box.vx = Math.max(box.vx, pu5Level * boxSize);
+    if(!destroyed) collideSurface(incinerator,true);
+    // The purchased guard wall blocks the box at the far/right edge of the incinerator.
+    if(wallPurchased && !destroyed) {
+      const wallHeight = 100 * (1 + upgrade2Level);
+      const wall = { x: incinerator.x + incinerator.w - 3, y: incinerator.y + incinerator.h - wallHeight, w: 14, h: wallHeight };
+      const pts = corners();
+      const leftmost = Math.min(...pts.map(p => p.x));
+      const rightmost = Math.max(...pts.map(p => p.x));
+      const topmost = Math.min(...pts.map(p => p.y));
+      const bottommost = Math.max(...pts.map(p => p.y));
+      if(rightmost > wall.x && leftmost < wall.x + wall.w && bottommost > wall.y && topmost < wall.y + wall.h && box.vx > 0) {
+        box.x -= rightmost - wall.x;
+        box.vx = -Math.abs(box.vx) * 0.25;
+        box.av *= 0.75;
+      }
+    }
+    // Prevent obvious tunneling through thin platform tops on fast falls.
+    if(!destroyed && box.vy>=0) {
+      const nowPts=corners();
+      for(const surface of [platform,incinerator]) {
+        const oldBottom=(()=>{ const c=Math.cos(old.angle),s=Math.sin(old.angle); return [[-half,-half],[half,-half],[half,half],[-half,half]].map(([x,y])=>({x:old.x+x*c-y*s,y:old.y+x*s+y*c})); })();
+        const oldMin=Math.min(...oldBottom.map(p=>p.y)), oldMax=Math.max(...oldBottom.map(p=>p.y));
+        const newMin=Math.min(...nowPts.map(p=>p.y)), newMax=Math.max(...nowPts.map(p=>p.y));
+        const overlaps=nowPts.some(p=>p.x>=surface.x&&p.x<=surface.x+surface.w);
+        if(overlaps && oldMax<=surface.y && newMax>=surface.y && oldMin<surface.y) {
+          box.y-=newMax-surface.y; box.vy=-Math.abs(box.vy)*restitution;
+          if(surface===incinerator) { endBox('Incinerated!',true); return; }
+        }
+      }
+    }
+    if(box.y>H+half || box.x < -half*2 || box.x > W+half*2) endBox('The box fell off-screen.',false);
+  }
+
+  // Axis-separating tests and a simple impulse response let the boxes collide
+  // while preserving their rotation and independent linear/angular velocities.
+  function boxCorners(b) {
+    const c=Math.cos(b.angle), s=Math.sin(b.angle);
+    return [[-half,-half],[half,-half],[half,half],[-half,half]].map(([x,y])=>({x:b.x+x*c-y*s,y:b.y+x*s+y*c}));
+  }
+  function collideBoxes(a,b) {
+    if (!a || !b) return;
+    const ac=boxCorners(a), bc=boxCorners(b);
+    const axes=[];
+    for (const obj of [a,b]) {
+      const c=Math.cos(obj.angle), s=Math.sin(obj.angle);
+      axes.push({x:c,y:s},{x:-s,y:c});
+    }
+    let minOverlap=Infinity, bestAxis=null;
+    for (const axis of axes) {
+      const ap=ac.map(p=>p.x*axis.x+p.y*axis.y), bp=bc.map(p=>p.x*axis.x+p.y*axis.y);
+      const overlap=Math.min(Math.max(...ap),Math.max(...bp))-Math.max(Math.min(...ap),Math.min(...bp));
+      if (overlap<=0) return;
+      if (overlap<minOverlap) { minOverlap=overlap; bestAxis=axis; }
+    }
+    let nx=bestAxis.x, ny=bestAxis.y;
+    const dx=b.x-a.x, dy=b.y-a.y;
+    if(dx*nx+dy*ny<0){nx=-nx;ny=-ny;}
+    const invMassA=1, invMassB=1;
+    const correction=Math.max(0,minOverlap-0.01)*0.5;
+    a.x-=nx*correction; a.y-=ny*correction;
+    b.x+=nx*correction; b.y+=ny*correction;
+    const rvx=b.vx-a.vx, rvy=b.vy-a.vy, along=rvx*nx+rvy*ny;
+    if(along<0){
+      const impulse=-(1+0.25)*along/(invMassA+invMassB);
+      a.vx-=impulse*nx*invMassA; a.vy-=impulse*ny*invMassA;
+      b.vx+=impulse*nx*invMassB; b.vy+=impulse*ny*invMassB;
+      // A small tangential response transfers some spin on impact.
+      const tx=-ny, ty=nx, tangent=(rvx*tx+rvy*ty)*0.06;
+      a.av-=tangent/boxSize; b.av+=tangent/boxSize;
+    }
+  }
+
+  function physicsStep(dt) {
+    const realDragging = dragging;
+    // Keep the normal IB gameplay simulating in the background, even while the
+    // Prestige subtab is selected or another top-level tab is open.
+    const canUseSecond = upgrade3Purchased && box2 && !box2Destroyed;
+    const realBox=box, realDestroyed=destroyed, realRespawnAt=respawnAt;
+    dragging = realDragging && dragTarget==='box';
+    simulateOneBox(dt);
+    const primaryDestroyed=destroyed, primaryRespawnAt=respawnAt;
+    box=realBox; destroyed=primaryDestroyed; respawnAt=primaryRespawnAt;
+    if (canUseSecond) {
+      const savedBox=box, savedDestroyed=destroyed, savedRespawn=respawnAt, savedDragging=dragging;
+      box=box2; destroyed=box2Destroyed; respawnAt=box2RespawnAt;
+      dragging=realDragging && dragTarget==='box2';
+      simulateOneBox(dt);
+      box2=box; box2Destroyed=destroyed; box2RespawnAt=respawnAt;
+      box=savedBox; destroyed=savedDestroyed; respawnAt=savedRespawn; dragging=savedDragging;
+      if(!destroyed && !box2Destroyed) collideBoxes(box,box2);
+    }
+    dragging=realDragging;
+    const simReincarnation = reincarnationMode && reincarnationBox;
+    const simPrestige = prestigeMode && upgrade4Purchased && prestigeBox;
+    if (!simReincarnation && !simPrestige) return;
+    const mainBox=box, mainDestroyed=destroyed, mainRespawn=respawnAt;
+    const oldInc={x:incinerator.x,y:incinerator.y,w:incinerator.w,h:incinerator.h};
+    const oldWall=wallPurchased;
+    const oldPrestigeCount=prestigedBoxes;
+    const oldLifeBoxes=lifeBoxes;
+    if (simReincarnation) { box=reincarnationBox; destroyed=reincarnationDestroyed; respawnAt=reincarnationRespawnAt; }
+    else { box=prestigeBox; destroyed=prestigeDestroyed; respawnAt=prestigeRespawnAt; }
+    incinerator.x=735; incinerator.y=425; incinerator.w=155; incinerator.h=24;
+    wallPurchased=false; dragging=realDragging && dragTarget===(simReincarnation ? 'reincarnationBox' : 'prestigeBox'); isPrestigeSimulation=true;
+    simulateOneBox(dt);
+    if (simReincarnation) { if (lifeBoxes === oldLifeBoxes) { reincarnationBox=box; reincarnationDestroyed=destroyed; reincarnationRespawnAt=respawnAt; } }
+    else { prestigeBox=box; prestigeDestroyed=destroyed; prestigeRespawnAt=respawnAt; }
+    box=mainBox; destroyed=mainDestroyed; respawnAt=mainRespawn;
+    incinerator.x=oldInc.x; incinerator.y=oldInc.y; incinerator.w=oldInc.w; incinerator.h=oldInc.h;
+    wallPurchased=oldWall; isPrestigeSimulation=false; dragging=realDragging;
+    if (lifeBoxes > oldLifeBoxes) {
+      box={x:spawn.x,y:spawn.y,vx:0,vy:0,angle:0,av:0,grounded:true}; destroyed=false; respawnAt=null; box2=null; box2Destroyed=false; box2RespawnAt=null; particles=particles.filter(p=>p.reincarnation);
+    }
+    if (prestigedBoxes > oldPrestigeCount) {
+      // Reset pre-prestige progress while preserving all purchased upgrades/unlocks.
+      box={x:spawn.x,y:spawn.y,vx:0,vy:0,angle:0,av:0,grounded:true};
+      destroyed=false; respawnAt=null; box2=null; box2Destroyed=false; box2RespawnAt=null;
+      particles=particles.filter(p=>p.prestige);
+    }
+    if (reincarnationDestroyed && reincarnationRespawnAt!==null && performance.now()>=reincarnationRespawnAt) { reincarnationBox={x:spawn.x,y:spawn.y,vx:0,vy:0,angle:0,av:0,grounded:true}; reincarnationDestroyed=false; reincarnationRespawnAt=null; }
+    if (prestigeDestroyed && prestigeRespawnAt!==null && performance.now()>=prestigeRespawnAt) {
+      prestigeBox={x:spawn.x,y:spawn.y,vx:0,vy:0,angle:0,av:0,grounded:true}; prestigeDestroyed=false; prestigeRespawnAt=null;
+    }
+  }
+
+  function update(dt) {
+    const frame=Math.min(dt,0.05);
+    if (generatorActive) {
+      if (generatorFuel > 0) {
+        const consumed = Math.min(generatorFuel, 0.1 * frame);
+        generatorFuel -= consumed;
+        boxPower += consumed * 10 * Math.pow(2, pu3Level) * (pu4Purchased ? Math.max(0, prestigedBoxes) ** (1 / 5) : 1) * (pu7Purchased ? 1.5 : 1) * (lifeUpgrade1Purchased ? 3 : 1);
+        if (generatorFuel <= 1e-8) { generatorFuel = 0; generatorActive = false; }
+        updatePowerUI();
+      } else generatorActive = false;
+    }
+    updatePowerUI();
+    accumulator+=frame;
+    const fixed=1/120;
+    let loops=0;
+    while(accumulator>=fixed && loops<8) { physicsStep(fixed); accumulator-=fixed; loops++; }
+    // Animate every particle independently of either box's destroyed state.
+    // Particles from box 2 must keep moving even while box 1 is still active.
+    for(const p of particles) {
+      p.life-=frame;
+      p.x+=p.vx*frame;
+      p.y+=p.vy*frame;
+      p.vy+=gravity*0.35*frame;
+      p.vx*=Math.exp(-0.5*frame);
+    }
+    particles=particles.filter(p=>p.life>0);
+    if(destroyed && respawnAt!==null && performance.now()>=respawnAt) reset();
+    if(box2Destroyed && box2RespawnAt!==null && performance.now()>=box2RespawnAt) resetBox2();
+  }
+  function drawBackground() {
+    ctx.fillStyle='#252a31'; ctx.fillRect(0,0,W,H); ctx.strokeStyle='rgba(255,255,255,0.035)'; ctx.lineWidth=1;
+    for(let x=0;x<W;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
+    for(let y=0;y<H;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+  }
+  function draw() {
+    drawBackground();
+    if (reincarnationMode && reincarnationBox) { drawReincarnationScene(); return; }
+    if (prestigeMode && upgrade4Purchased) { drawPrestigeScene(); return; }
+    ctx.fillStyle='#8d969f';ctx.fillRect(platform.x,platform.y,platform.w,platform.h);
+    ctx.fillStyle='#c1c8cf';ctx.fillRect(platform.x,platform.y,platform.w,5);
+    ctx.fillStyle='#535b64';ctx.fillRect(platform.x,platform.y+platform.h,platform.w,7);
+    if (pu5Level > 0) { ctx.save(); ctx.beginPath(); ctx.rect(platform.x, platform.y, platform.w, platform.h); ctx.clip(); ctx.strokeStyle='#404852'; ctx.lineWidth=3; const offset=(performance.now()*pu5Level*0.05)%28; for(let x=platform.x-28+offset;x<platform.x+platform.w;x+=28){ctx.beginPath();ctx.moveTo(x,platform.y+5);ctx.lineTo(x+12,platform.y+platform.h-3);ctx.stroke();} ctx.restore(); }
+    ctx.fillStyle='#a94619';ctx.fillRect(incinerator.x,incinerator.y,incinerator.w,incinerator.h);
+    ctx.fillStyle='#ff7a22';ctx.fillRect(incinerator.x,incinerator.y,incinerator.w,8);
+    ctx.fillStyle='#ffb13b';
+    for(let i=0;i<7;i++){const fx=incinerator.x+10+i*21;ctx.beginPath();ctx.moveTo(fx,incinerator.y);ctx.lineTo(fx+7,incinerator.y-12-(i%3)*4);ctx.lineTo(fx+14,incinerator.y);ctx.fill();}
+    ctx.fillStyle='#d9dce0';ctx.font='bold 15px Arial';ctx.textAlign='center';ctx.fillText('INCINERATOR',incinerator.x+incinerator.w/2,incinerator.y+45);
+    if(wallPurchased) { const wx=incinerator.x+incinerator.w-3, wallHeight=100*(1+upgrade2Level), wy=incinerator.y+incinerator.h-wallHeight; ctx.fillStyle='#77818d'; ctx.fillRect(wx,wy,14,wallHeight); ctx.fillStyle='#aeb7c1'; ctx.fillRect(wx,wy,4,wallHeight); }
+    if(destroyed && respawnAt!==null) {
+      const delay=upgrade3Purchased?2500:5000;
+      const remaining=Math.max(0,Math.min(1,(respawnAt-performance.now())/delay));
+      const opacity=1-remaining;
+      ctx.save(); ctx.globalAlpha=opacity; ctx.translate(spawn.x,spawn.y); ctx.fillStyle='#a9855d'; ctx.fillRect(-half,-half,boxSize,boxSize); ctx.fillStyle='#c7a47a'; ctx.fillRect(-half+5,-half+5,boxSize-10,boxSize-10); ctx.strokeStyle='#755638'; ctx.lineWidth=3; ctx.strokeRect(-half,-half,boxSize,boxSize); ctx.beginPath(); ctx.moveTo(-half+5,-half+5); ctx.lineTo(half-5,half-5); ctx.moveTo(half-5,-half+5); ctx.lineTo(-half+5,half-5); ctx.stroke(); ctx.restore();
+    }
+    if(!destroyed){ctx.save();ctx.translate(box.x,box.y);ctx.rotate(box.angle);ctx.fillStyle='#a9855d';ctx.fillRect(-half,-half,boxSize,boxSize);ctx.fillStyle='#c7a47a';ctx.fillRect(-half+5,-half+5,boxSize-10,boxSize-10);ctx.strokeStyle='#755638';ctx.lineWidth=3;ctx.strokeRect(-half,-half,boxSize,boxSize);ctx.beginPath();ctx.moveTo(-half+5,-half+5);ctx.lineTo(half-5,half-5);ctx.moveTo(half-5,-half+5);ctx.lineTo(-half+5,half-5);ctx.stroke();ctx.restore();}
+    if(upgrade3Purchased && box2 && !box2Destroyed){ctx.save();ctx.translate(box2.x,box2.y);ctx.rotate(box2.angle);ctx.fillStyle='#a9855d';ctx.fillRect(-half,-half,boxSize,boxSize);ctx.fillStyle='#c7a47a';ctx.fillRect(-half+5,-half+5,boxSize-10,boxSize-10);ctx.strokeStyle='#755638';ctx.lineWidth=3;ctx.strokeRect(-half,-half,boxSize,boxSize);ctx.beginPath();ctx.moveTo(-half+5,-half+5);ctx.lineTo(half-5,half-5);ctx.moveTo(half-5,-half+5);ctx.lineTo(-half+5,half-5);ctx.stroke();ctx.restore();}
+    if(upgrade3Purchased && box2Destroyed && box2RespawnAt!==null){const rem=Math.max(0,Math.min(1,(box2RespawnAt-performance.now())/2500));ctx.save();ctx.globalAlpha=1-rem;ctx.translate(spawn.x+58,spawn.y);ctx.fillStyle='#a9855d';ctx.fillRect(-half,-half,boxSize,boxSize);ctx.fillStyle='#c7a47a';ctx.fillRect(-half+5,-half+5,boxSize-10,boxSize-10);ctx.strokeStyle='#755638';ctx.lineWidth=3;ctx.strokeRect(-half,-half,boxSize,boxSize);ctx.restore();}
+    for(const p of particles){ctx.globalAlpha=Math.max(0,p.life/p.maxLife);ctx.fillStyle=p.prestige ? (Math.random()>0.5?'#55ed79':'#baffc6') : (Math.random()>0.5?'#ff9c28':'#ffe16b');ctx.beginPath();ctx.arc(p.x,p.y,p.size*Math.max(0.2,p.life/p.maxLife),0,Math.PI*2);ctx.fill();}
+    ctx.globalAlpha=1;
+  }
+  function drawPrestigeScene() {
+    ctx.fillStyle='#8d969f';ctx.fillRect(platform.x,platform.y,platform.w,platform.h);
+    ctx.fillStyle='#c1c8cf';ctx.fillRect(platform.x,platform.y,platform.w,5);
+    ctx.fillStyle='#535b64';ctx.fillRect(platform.x,platform.y+platform.h,platform.w,7);
+    ctx.fillStyle='#064b9a';ctx.fillRect(incinerator.x,incinerator.y,incinerator.w,incinerator.h);
+    ctx.fillStyle='#168cff';ctx.fillRect(incinerator.x,incinerator.y,incinerator.w,8);
+    ctx.fillStyle='#72bdff';for(let i=0;i<7;i++){const fx=incinerator.x+10+i*21;ctx.beginPath();ctx.moveTo(fx,incinerator.y);ctx.lineTo(fx+7,incinerator.y-12-(i%3)*4);ctx.lineTo(fx+14,incinerator.y);ctx.fill();}
+    ctx.fillStyle='#d9dce0';ctx.font='bold 15px Arial';ctx.textAlign='center';ctx.fillText('PRESTIGER',incinerator.x+incinerator.w/2,incinerator.y+45);
+    if(prestigeDestroyed && prestigeRespawnAt!==null){const rem=Math.max(0,Math.min(1,(prestigeRespawnAt-performance.now())/2500));ctx.save();ctx.globalAlpha=1-rem;ctx.translate(spawn.x,spawn.y);ctx.fillStyle='#24a148';ctx.fillRect(-half,-half,boxSize,boxSize);ctx.restore();}
+    if(prestigeBox && !prestigeDestroyed){ctx.save();ctx.translate(prestigeBox.x,prestigeBox.y);ctx.rotate(prestigeBox.angle);ctx.fillStyle='#16883a';ctx.fillRect(-half,-half,boxSize,boxSize);ctx.fillStyle='#3de56b';ctx.fillRect(-half+5,-half+5,boxSize-10,boxSize-10);ctx.strokeStyle='#075b23';ctx.lineWidth=3;ctx.strokeRect(-half,-half,boxSize,boxSize);ctx.beginPath();ctx.moveTo(-half+5,-half+5);ctx.lineTo(half-5,half-5);ctx.moveTo(half-5,-half+5);ctx.lineTo(-half+5,half-5);ctx.stroke();ctx.restore();}
+    for(const p of particles){ctx.globalAlpha=Math.max(0,p.life/p.maxLife);ctx.fillStyle=p.prestige?(Math.random()>0.5?'#55ed79':'#baffc6'):(Math.random()>0.5?'#ff9c28':'#ffe16b');ctx.beginPath();ctx.arc(p.x,p.y,p.size*Math.max(0.2,p.life/p.maxLife),0,Math.PI*2);ctx.fill();}ctx.globalAlpha=1;
+  }
+  function showReincarnationOverlay() {
+    const overlay = document.createElement('div');
+    overlay.id = 'reincarnationFullscreenOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh;z-index:2147483647;pointer-events:none;overflow:hidden;';
+    const haze = document.createElement('div');
+    haze.style.cssText = 'position:absolute;inset:0;background:rgb(20,75,190);opacity:0;animation:reincarnationHaze 16s linear forwards;';
+    const message = document.createElement('div');
+    message.style.cssText = 'position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;color:#000;font:bold clamp(22px,3.6vw,44px) Arial,sans-serif;opacity:0;animation:reincarnationMessage 16s linear forwards;';
+    const firstLine = document.createElement('div');
+    firstLine.textContent = 'You have sacrificed everything and reincarnated...';
+    const secondLine = document.createElement('div');
+    const n = reincarnationCount;
+    const mod100 = n % 100;
+    const suffix = mod100 >= 11 && mod100 <= 13 ? 'th' : n % 10 === 1 ? 'st' : n % 10 === 2 ? 'nd' : n % 10 === 3 ? 'rd' : 'th';
+    secondLine.textContent = `This is your ${n}${suffix} time reincarnating.`;
+    message.append(firstLine, secondLine);
+    overlay.append(haze, message);
+    if (!document.getElementById('reincarnationOverlayStyles')) {
+      const style = document.createElement('style');
+      style.id = 'reincarnationOverlayStyles';
+      style.textContent = '@keyframes reincarnationHaze { 0% { opacity:0; } 12.5% { opacity:1; } 81.25% { opacity:1; } 100% { opacity:0; } } @keyframes reincarnationMessage { 0%,12.5% { opacity:0; } 18.75% { opacity:1; } 81.25% { opacity:1; } 100% { opacity:0; } }';
+      document.head.appendChild(style);
+    }
+    document.body.appendChild(overlay);
+    window.setTimeout(() => overlay.remove(), 16000);
+  }
+
+  function performReincarnation() {
+    const beforeCount = reincarnationCount;
+    reincarnationCount++;
+    lifeBoxes++;
+    incineratedCount = 0; prestigedBoxes = 0;
+    wallPurchased = false; upgrade3Purchased = false; upgrade2Level = 0;
+    prestigeUpgrade1Purchased = false; prestigeUpgradeUnlocked = false; prestigeUpgradeTab = false;
+    pu3Level = 0; pu4Purchased = false; pu5Level = 0; pu6Purchased = false; pu7Purchased = false;
+    // U1, U4 and PU2 are the only permanent upgrades.
+    wallPurchased = true; upgrade4Purchased = true; prestigeUpgrade2Purchased = true; powersUnlocked = true;
+    boxPower = 0; coalBoxes = 0; generatorFuel = 0; generatorActive = false;
+    mineBoxes = []; mineField.innerHTML = ''; mineCooldownUntil = 0;
+    // The main IB box is reset by physicsStep after the reincarnation simulation returns.
+    box2=null; box2Destroyed=false; box2RespawnAt=null;
+    prestigeBox={x:spawn.x,y:spawn.y,vx:0,vy:0,angle:0,av:0,grounded:true}; prestigeDestroyed=false; prestigeRespawnAt=null;
+    reincarnationBox={x:spawn.x,y:spawn.y,vx:0,vy:0,angle:0,av:0,grounded:true}; reincarnationDestroyed=false; reincarnationRespawnAt=null;
+    particles.push(...Array.from({length:60},()=>{const a=Math.random()*Math.PI*2,sp=70+Math.random()*240;return{x:reincarnationBox.x,y:reincarnationBox.y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-90,life:1+Math.random(),maxLife:2,size:3+Math.random()*6,reincarnation:true};}));
+    reincarnationAnimationStart = null;
+    showReincarnationOverlay();
+    scoreDisplay.textContent='Incinerated boxes: '+formatCounter(incineratedCount);
+    status.textContent='Reincarnation complete! You gained 1 Life Box.';
+    setReincarnationMode(true); updateUpgradeUI(); updatePowerUI();
+  }
+  function drawReincarnationScene() {
+    // Platform and the light-blue Reincarnator.
+    ctx.fillStyle='#8d969f';ctx.fillRect(platform.x,platform.y,platform.w,platform.h);
+    ctx.fillStyle='#c1c8cf';ctx.fillRect(platform.x,platform.y,platform.w,5);ctx.fillStyle='#535b64';ctx.fillRect(platform.x,platform.y+platform.h,platform.w,7);
+    ctx.fillStyle='#2864a0';ctx.fillRect(incinerator.x,incinerator.y,incinerator.w,incinerator.h);ctx.fillStyle='#75c9ff';ctx.fillRect(incinerator.x,incinerator.y,incinerator.w,8);
+    ctx.fillStyle='#b4e4ff';for(let i=0;i<7;i++){const fx=incinerator.x+10+i*21;ctx.beginPath();ctx.moveTo(fx,incinerator.y);ctx.lineTo(fx+7,incinerator.y-12-(i%3)*4);ctx.lineTo(fx+14,incinerator.y);ctx.fill();}
+    ctx.fillStyle='#d9dce0';ctx.font='bold 15px Arial';ctx.textAlign='center';ctx.fillText('REINCARNATOR',incinerator.x+incinerator.w/2,incinerator.y+45);
+    for(const p of particles){if(!p.reincarnation)continue;ctx.globalAlpha=Math.max(0,p.life/p.maxLife)*0.65;ctx.fillStyle=Math.random()>0.5?'#123e78':'#285da0';ctx.beginPath();ctx.arc(p.x,p.y,p.size*Math.max(0.2,p.life/p.maxLife),0,Math.PI*2);ctx.fill();}ctx.globalAlpha=1;
+    if(reincarnationDestroyed && reincarnationRespawnAt!==null){const rem=Math.max(0,Math.min(1,(reincarnationRespawnAt-performance.now())/2500));ctx.save();ctx.globalAlpha=1-rem;ctx.translate(spawn.x,spawn.y);ctx.fillStyle='#071b49';ctx.fillRect(-half,-half,boxSize,boxSize);ctx.restore();}
+    if(reincarnationBox && !reincarnationDestroyed){ctx.save();ctx.translate(reincarnationBox.x,reincarnationBox.y);ctx.rotate(reincarnationBox.angle);ctx.shadowColor='rgba(8,35,100,.65)';ctx.shadowBlur=13;ctx.fillStyle='#071b49';ctx.fillRect(-half,-half,boxSize,boxSize);ctx.shadowBlur=0;ctx.fillStyle='#123b83';ctx.fillRect(-half+5,-half+5,boxSize-10,boxSize-10);ctx.strokeStyle='#03112f';ctx.lineWidth=3;ctx.strokeRect(-half,-half,boxSize,boxSize);ctx.beginPath();ctx.moveTo(-half+5,-half+5);ctx.lineTo(half-5,half-5);ctx.moveTo(half-5,-half+5);ctx.lineTo(-half+5,half-5);ctx.stroke();ctx.restore();}
+  }
+  function loop(time){const dt=lastTime?(time-lastTime)/1000:0;lastTime=time;update(dt);draw();requestAnimationFrame(loop);}
+  reset();
+  if (!loadGame()) { incineratedCount = 0; prestigedBoxes = 0; boxPower = 0; coalBoxes = 0; generatorFuel = 0; lifeBoxes = 0; }
+  updateUpgradeUI(); updatePowerUI(); requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
